@@ -1,0 +1,30 @@
+#!/bin/bash
+# Custom AppRun (passed to linuxdeploy via --custom-apprun in release.yml).
+#
+# Flutter's Linux build lays out native plugin .so files in usr/bin/lib/
+# (next to the "peero" executable), not in a sibling usr/lib/ like
+# linuxdeploy's own convention -- so we set LD_LIBRARY_PATH to cover both.
+#
+# GST_PLUGIN_*_1_0 point GStreamer at the small, curated set of plugins
+# bundled by bundle-gstreamer-audio.sh (just enough to play the AAC/.m4a
+# voice messages this app records -- see that script for the exact list).
+# Setting GST_PLUGIN_SYSTEM_PATH_1_0 replaces the default system plugin
+# path entirely, so playback only ever uses what we shipped, not whatever
+# happens to be installed on the host. Video playback (media_kit/libmpv) is
+# deliberately NOT bundled -- libmpv.so.2 resolves from the host system at
+# the normal dynamic-linker search path (declared as a runtime dependency
+# in control.template for the .deb; AppImage users need it on the host).
+#
+# record_linux shells out to `parecord` (mic capture) and `ffmpeg` (AAC
+# encoding) by bare name via $PATH -- see AudioRecorderService. `parecord`
+# is bundled by bundle-pulseaudio-tools.sh (small); prepending its dir to
+# PATH means it's found first without hiding the host's `ffmpeg`, which
+# stays a runtime dependency for the same reason libmpv/video does (its
+# codec closure is just as huge).
+HERE="$(dirname "$(readlink -f "${0}")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_PATH_1_0="$HERE/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_SCANNER_1_0="$HERE/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+export PATH="$HERE/usr/lib/peero-audio-tools/bin:$PATH"
+exec "$HERE/usr/bin/peero" "$@"

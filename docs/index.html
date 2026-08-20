@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peero — local network messaging</title>
+<meta name="description" content="Two devices on the same network find each other automatically and exchange text, voice messages and files. No server, no account, no cloud.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%230E2A47%22/><circle cx=%2250%22 cy=%2250%22 r=%2210%22 fill=%22%235EEAD4%22/><circle cx=%2250%22 cy=%2250%22 r=%2228%22 fill=%22none%22 stroke=%22%235EEAD4%22 stroke-width=%224%22 opacity=%220.6%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #081625;
+    --blueprint: #0E2A47;
+    --blueprint-line: #4A7FB5;
+    --cyan: #5EEAD4;
+    --amber: #FFB454;
+    --paper: #F4F7FA;
+    --paper-dim: #B9C7D6;
+    --grid-line: rgba(244, 247, 250, 0.07);
+    --radius: 14px;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --display: 'Space Grotesk', var(--sans);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--sans);
+    line-height: 1.55;
+    overflow-x: hidden;
+  }
+
+  a { color: var(--cyan); }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  header.hero {
+    background: radial-gradient(circle at 50% -10%, var(--blueprint) 0%, var(--ink) 72%);
+    padding: 96px 24px 80px;
+    text-align: center;
+    position: relative;
+  }
+
+  .lang-switch {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lang-switch svg {
+    width: 15px;
+    height: 15px;
+    stroke: var(--blueprint-line);
+    fill: none;
+    stroke-width: 1.6;
+    flex-shrink: 0;
+  }
+  .lang-switch select {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--paper-dim);
+    background: var(--blueprint);
+    border: 1px solid var(--blueprint-line);
+    border-radius: 999px;
+    padding: 6px 30px 6px 12px;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23B9C7D6' stroke-width='1.6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+    background-size: 10px;
+  }
+  .lang-switch select:hover { color: var(--paper); border-color: var(--cyan); }
+  .lang-switch select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  @media (max-width: 600px) {
+    .lang-switch { top: 12px; right: 12px; }
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: var(--cyan);
+    text-transform: uppercase;
+  }
+
+  h1.brand {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(2.6rem, 7vw, 4.5rem);
+    margin: 14px 0 6px;
+    letter-spacing: -0.01em;
+  }
+
+  .tagline {
+    max-width: 46ch;
+    margin: 0 auto;
+    color: var(--paper-dim);
+    font-size: 1.08rem;
+  }
+
+  .schematic-note {
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--blueprint-line);
+  }
+
+  .discovery {
+    width: min(560px, 90vw);
+    margin: 44px auto 8px;
+  }
+  .discovery svg { width: 100%; height: auto; overflow: visible; }
+  .node-box { fill: var(--ink); stroke: var(--cyan); stroke-width: 2; }
+  .node-dot { fill: var(--cyan); }
+  .link-line {
+    stroke: var(--blueprint-line);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 5;
+    fill: none;
+    opacity: 0;
+    animation: link-in 4s ease-in-out infinite;
+  }
+  .link-line.b { animation-delay: 0.4s; }
+  .ping {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-width: 2;
+    transform-origin: center;
+    opacity: 0;
+    animation: ping 4s ease-out infinite;
+  }
+  .ping.b { animation-delay: 0.4s; }
+  .pkt-label {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    fill: var(--paper-dim);
+    opacity: 0;
+    animation: label-in 4s ease-in-out infinite;
+  }
+
+  @keyframes ping {
+    0%   { opacity: 0; transform: scale(0.3); }
+    15%  { opacity: 0.9; }
+    55%  { opacity: 0; transform: scale(2.4); }
+    100% { opacity: 0; transform: scale(2.4); }
+  }
+  @keyframes link-in {
+    0%, 20% { opacity: 0; }
+    45%, 100% { opacity: 0.9; }
+  }
+  @keyframes label-in {
+    0%, 30% { opacity: 0; transform: translateY(2px); }
+    50%, 100% { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .link-line, .ping, .pkt-label { animation: none; opacity: 0.9; }
+    .ping { display: none; }
+  }
+
+  .cta-row {
+    margin-top: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .term-card {
+    background: var(--blueprint);
+    border: 1px solid var(--blueprint-line);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 14px;
+    max-width: 92vw;
+    overflow-x: auto;
+  }
+  .term-card .prompt { color: var(--cyan); user-select: none; }
+  .term-card code { color: var(--paper); white-space: pre; }
+
+  .copy-btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--cyan);
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .copy-btn:hover { background: var(--paper); }
+  .copy-btn:focus-visible, a:focus-visible, .tab-label:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+
+  .win-hint {
+    font-size: 13px;
+    color: var(--paper-dim);
+  }
+  .win-hint a { color: var(--amber); }
+
+  main { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  section { padding: 64px 0; border-top: 1px solid rgba(244,247,250,0.09); }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 1.7rem;
+    margin: 0 0 8px;
+  }
+  .section-lede { color: var(--paper-dim); margin: 0 0 32px; max-width: 60ch; }
+
+  .tabs input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+  .tab-labels { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+  .tab-label {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--blueprint-line);
+    color: var(--paper-dim);
+    cursor: pointer;
+  }
+  .tab-panel { display: none; }
+  #tab-linux:checked ~ .tab-labels label[for="tab-linux"],
+  #tab-macos:checked ~ .tab-labels label[for="tab-macos"],
+  #tab-windows:checked ~ .tab-labels label[for="tab-windows"] {
+    background: var(--cyan); color: var(--ink); border-color: var(--cyan);
+  }
+  #tab-linux:checked ~ .panels #panel-linux,
+  #tab-macos:checked ~ .panels #panel-macos,
+  #tab-windows:checked ~ .panels #panel-windows {
+    display: block;
+  }
+
+  .card {
+    background: var(--blueprint);
+    border: 1px solid rgba(74,127,181,0.4);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 18px;
+  }
+  .card h3 {
+    font-family: var(--sans);
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--cyan);
+    margin: 0 0 14px;
+  }
+  .term-block {
+    background: var(--ink);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    overflow-x: auto;
+    margin-bottom: 14px;
+  }
+  .term-block code { white-space: pre; }
+  .card-note { color: var(--paper-dim); font-size: 14.5px; }
+  ol.steps, ul.steps { margin: 0; padding-left: 1.2em; color: var(--paper-dim); font-size: 14.5px; }
+  ol.steps li, ul.steps li { margin-bottom: 6px; }
+  ol.steps code, ul.steps code, p code {
+    font-family: var(--mono);
+    background: rgba(244,247,250,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--paper);
+  }
+
+  .uninstall-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+  }
+  .uninstall-grid .card { margin-bottom: 0; }
+  .uninstall-grid h3 { color: var(--amber); }
+
+  footer {
+    padding: 40px 24px 64px;
+    text-align: center;
+    color: var(--paper-dim);
+    font-size: 13.5px;
+  }
+  footer .roadmap {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--blueprint-line);
+    margin-top: 10px;
+  }
+
+  @media (max-width: 600px) {
+    header.hero { padding: 72px 16px 56px; }
+    section { padding: 48px 0; }
+  }
+</style>
+</head>
+<body class="grid-bg">
+
+<header class="hero">
+  <div class="lang-switch">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18" />
+    </svg>
+    <select id="lang-select" aria-label="Language">
+      <option value="en">English</option>
+      <option value="fr">Français</option>
+      <option value="es">Español</option>
+      <option value="de">Deutsch</option>
+      <option value="it">Italiano</option>
+      <option value="pt">Português</option>
+    </select>
+  </div>
+
+  <p class="eyebrow" data-i18n="hero.eyebrow">Local network · no server · no account</p>
+  <h1 class="brand">Peero</h1>
+  <p class="tagline" data-i18n="hero.tagline">Two devices open the app on the same network, find each other on their own, and exchange text, voice messages and files. No cloud, no sign-up, no phone number.</p>
+  <p class="schematic-note" data-i18n="hero.note">UDP multicast discovery · 239.100.100.100:53320</p>
+
+  <div class="discovery" aria-hidden="true">
+    <svg viewBox="0 0 400 160">
+      <line class="link-line" x1="80" y1="110" x2="200" y2="50" />
+      <line class="link-line b" x1="200" y1="50" x2="320" y2="110" />
+
+      <circle class="ping" cx="200" cy="50" r="14" />
+      <circle class="ping b" cx="200" cy="50" r="14" />
+
+      <rect class="node-box" x="64" y="94" width="32" height="32" rx="6" />
+      <circle class="node-dot" cx="80" cy="110" r="4" />
+      <text class="pkt-label" x="46" y="140">alice.local</text>
+
+      <rect class="node-box" x="184" y="34" width="32" height="32" rx="6" />
+      <circle class="node-dot" cx="200" cy="50" r="4" />
+      <text class="pkt-label" x="172" y="24" data-i18n="hero.announce">announce</text>
+
+      <rect class="node-box" x="304" y="94" width="32" height="32" rx="6" />
+      <circle class="node-dot" cx="320" cy="110" r="4" />
+      <text class="pkt-label" x="292" y="140">bob.local</text>
+    </svg>
+  </div>
+
+  <div class="cta-row">
+    <div class="term-card">
+      <span class="prompt">$</span>
+      <code id="cmd-unix">curl -fsSL https://peero-app.github.io/peero/install.sh | bash</code>
+      <button class="copy-btn" data-copy-target="cmd-unix" data-i18n="copy.label">copy</button>
+    </div>
+    <p class="win-hint" data-i18n-html="hero.winHint">Linux &amp; macOS. On Windows? <a href="#install">see below</a>.</p>
+  </div>
+</header>
+
+<main>
+  <section id="install">
+    <h2 data-i18n="install.title">Install</h2>
+    <p class="section-lede" data-i18n="install.lede">One command, or the manual steps if you would rather not run a script sight unseen.</p>
+
+    <div class="tabs">
+      <input type="radio" name="os" id="tab-linux" checked>
+      <input type="radio" name="os" id="tab-macos">
+      <input type="radio" name="os" id="tab-windows">
+
+      <div class="tab-labels">
+        <label class="tab-label" for="tab-linux" tabindex="0">Linux</label>
+        <label class="tab-label" for="tab-macos" tabindex="0">macOS</label>
+        <label class="tab-label" for="tab-windows" tabindex="0">Windows</label>
+      </div>
+
+      <div class="panels">
+        <div class="tab-panel" id="panel-linux">
+          <div class="card">
+            <h3 data-i18n="card.oneCommand">One command</h3>
+            <div class="term-block">
+              <code id="cmd-linux">curl -fsSL https://peero-app.github.io/peero/install.sh | bash</code>
+              <button class="copy-btn" data-copy-target="cmd-linux" data-i18n="copy.label">copy</button>
+            </div>
+            <p class="card-note" data-i18n-html="linux.note">
+              On Ubuntu/Debian this installs a <code>.deb</code> package through <code>apt</code>.
+              On other distributions it downloads an AppImage into <code>~/.local/bin</code>.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="card.manual">Manually</h3>
+            <ul class="steps">
+              <li data-i18n-html="linux.debian"><strong>Ubuntu / Debian</strong> — download <code>peero.deb</code> from the <a href="https://github.com/peero-app/peero/releases/latest">releases page</a>, then run: <code>sudo apt install ./peero.deb</code></li>
+              <li data-i18n-html="linux.other"><strong>Other distributions</strong> — download <code>peero.AppImage</code>, make it executable (<code>chmod +x peero.AppImage</code>) and run it directly.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-macos">
+          <div class="card">
+            <h3 data-i18n="card.homebrew">With Homebrew</h3>
+            <div class="term-block">
+              <code id="cmd-brew">brew install --cask peero-app/tap/peero</code>
+              <button class="copy-btn" data-copy-target="cmd-brew" data-i18n="copy.label">copy</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3 data-i18n="card.orOneCommand">Or in one command</h3>
+            <div class="term-block">
+              <code id="cmd-mac">curl -fsSL https://peero-app.github.io/peero/install.sh | bash</code>
+              <button class="copy-btn" data-copy-target="cmd-mac" data-i18n="copy.label">copy</button>
+            </div>
+            <p class="card-note" data-i18n-html="macos.note">
+              The app is not signed by Apple. The first time you launch it, if macOS refuses to open it:
+              right-click the app → <code>Open</code>, or run <code>xattr -cr /Applications/peero.app</code>.
+            </p>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-windows">
+          <div class="card">
+            <h3 data-i18n="card.powershell">One command (PowerShell)</h3>
+            <div class="term-block">
+              <code id="cmd-win">powershell -c "irm https://peero-app.github.io/peero/install.ps1 | iex"</code>
+              <button class="copy-btn" data-copy-target="cmd-win" data-i18n="copy.label">copy</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3 data-i18n="card.manual">Manually</h3>
+            <ul class="steps">
+              <li data-i18n-html="windows.download">Download <code>peero-setup.exe</code> from the <a href="https://github.com/peero-app/peero/releases/latest">releases page</a></li>
+              <li data-i18n="windows.run">Double-click it and follow the installer</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="uninstall">
+    <h2 data-i18n="uninstall.title">Uninstall</h2>
+    <p class="section-lede" data-i18n="uninstall.lede">Nothing hidden to hunt down — each install method has its own removal command.</p>
+    <div class="uninstall-grid">
+      <div class="card">
+        <h3>Ubuntu / Debian (.deb)</h3>
+        <p><code>sudo apt remove peero</code></p>
+      </div>
+      <div class="card">
+        <h3>AppImage</h3>
+        <p data-i18n-html="uninstall.appimage">Just delete <code>~/.local/bin/peero.AppImage</code></p>
+      </div>
+      <div class="card">
+        <h3>macOS (Homebrew)</h3>
+        <p><code>brew uninstall --cask peero</code><br><code>brew untap peero-app/tap</code></p>
+      </div>
+      <div class="card">
+        <h3>Windows</h3>
+        <p data-i18n-html="uninstall.windows">Settings → Apps, or run <code>unins000.exe</code> in the install folder.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p data-i18n-html="footer.source"><a href="https://github.com/peero-app/peero">Source code on GitHub</a> — MIT licence</p>
+  <p class="roadmap" data-i18n="footer.roadmap">📱 iOS &amp; Android: planned for a later stage</p>
+</footer>
+
+<script>
+  var TRANSLATIONS = {
+    en: {
+      'meta.title': 'Peero — local network messaging',
+      'meta.description': 'Two devices on the same network find each other automatically and exchange text, voice messages and files. No server, no account, no cloud.',
+      'lang.label': 'Language',
+      'hero.eyebrow': 'Local network · no server · no account',
+      'hero.tagline': 'Two devices open the app on the same network, find each other on their own, and exchange text, voice messages and files. No cloud, no sign-up, no phone number.',
+      'hero.note': 'UDP multicast discovery · 239.100.100.100:53320',
+      'hero.announce': 'announce',
+      'hero.winHint': 'Linux &amp; macOS. On Windows? <a href="#install">see below</a>.',
+      'copy.label': 'copy',
+      'copy.done': 'copied!',
+      'install.title': 'Install',
+      'install.lede': 'One command, or the manual steps if you would rather not run a script sight unseen.',
+      'card.oneCommand': 'One command',
+      'card.manual': 'Manually',
+      'card.homebrew': 'With Homebrew',
+      'card.orOneCommand': 'Or in one command',
+      'card.powershell': 'One command (PowerShell)',
+      'linux.note': 'On Ubuntu/Debian this installs a <code>.deb</code> package through <code>apt</code>. On other distributions it downloads an AppImage into <code>~/.local/bin</code>.',
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — download <code>peero.deb</code> from the <a href="https://github.com/peero-app/peero/releases/latest">releases page</a>, then run: <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Other distributions</strong> — download <code>peero.AppImage</code>, make it executable (<code>chmod +x peero.AppImage</code>) and run it directly.',
+      'macos.note': 'The app is not signed by Apple. The first time you launch it, if macOS refuses to open it: right-click the app → <code>Open</code>, or run <code>xattr -cr /Applications/peero.app</code>.',
+      'windows.download': 'Download <code>peero-setup.exe</code> from the <a href="https://github.com/peero-app/peero/releases/latest">releases page</a>',
+      'windows.run': 'Double-click it and follow the installer',
+      'uninstall.title': 'Uninstall',
+      'uninstall.lede': 'Nothing hidden to hunt down — each install method has its own removal command.',
+      'uninstall.appimage': 'Just delete <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': 'Settings → Apps, or run <code>unins000.exe</code> in the install folder.',
+      'footer.source': '<a href="https://github.com/peero-app/peero">Source code on GitHub</a> — MIT licence',
+      'footer.roadmap': '📱 iOS &amp; Android: planned for a later stage'
+    },
+    fr: {
+      'meta.title': 'Peero — messagerie sur réseau local',
+      'meta.description': "Deux appareils sur le même réseau se découvrent automatiquement et s'échangent textes, messages vocaux et fichiers. Pas de serveur, pas de compte, pas de cloud.",
+      'lang.label': 'Langue',
+      'hero.eyebrow': 'Réseau local · aucun serveur · aucun compte',
+      'hero.tagline': "Deux appareils ouvrent l'app sur le même réseau, se trouvent tout seuls, et s'échangent textes, messages vocaux et fichiers. Pas de cloud, pas d'inscription, pas de numéro de téléphone.",
+      'hero.note': 'découverte par multicast UDP · 239.100.100.100:53320',
+      'hero.announce': 'annonce',
+      'copy.label': 'copier',
+      'copy.done': 'copié !',
+      'hero.winHint': 'Linux &amp; macOS. Sous Windows ? <a href="#install">voir plus bas</a>.',
+      'install.title': 'Installer',
+      'install.lede': "Une commande, ou les étapes manuelles si vous préférez ne pas exécuter un script à l'aveugle.",
+      'card.oneCommand': 'Une commande',
+      'card.manual': 'Manuellement',
+      'card.homebrew': 'Avec Homebrew',
+      'card.orOneCommand': 'Ou en une commande',
+      'card.powershell': 'Une commande (PowerShell)',
+      'linux.note': "Sur Ubuntu/Debian, ça installe un paquet <code>.deb</code> via <code>apt</code>. Sur les autres distributions, ça télécharge un AppImage dans <code>~/.local/bin</code>.",
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — téléchargez <code>peero.deb</code> depuis la <a href="https://github.com/peero-app/peero/releases/latest">page des releases</a>, puis : <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Autres distributions</strong> — téléchargez <code>peero.AppImage</code>, rendez-le exécutable (<code>chmod +x peero.AppImage</code>) et lancez-le directement.',
+      'macos.note': "L'app n'est pas signée par Apple. Au premier lancement, si macOS refuse de l'ouvrir : clic droit sur l'app → <code>Ouvrir</code>, ou <code>xattr -cr /Applications/peero.app</code>.",
+      'windows.download': 'Téléchargez <code>peero-setup.exe</code> depuis la <a href="https://github.com/peero-app/peero/releases/latest">page des releases</a>',
+      'windows.run': "Double-cliquez et suivez l'installeur",
+      'uninstall.title': 'Désinstaller',
+      'uninstall.lede': "Aucune trace cachée à traquer — chaque méthode d'installation a sa propre commande de retrait.",
+      'uninstall.appimage': 'Supprimez simplement <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': "Paramètres → Applications, ou lancez <code>unins000.exe</code> dans le dossier d'installation.",
+      'footer.source': '<a href="https://github.com/peero-app/peero">Code source sur GitHub</a> — licence MIT',
+      'footer.roadmap': '📱 iOS &amp; Android : prévus pour une prochaine étape'
+    },
+    es: {
+      'meta.title': 'Peero — mensajería en red local',
+      'meta.description': 'Dos dispositivos en la misma red se encuentran automáticamente e intercambian textos, mensajes de voz y archivos. Sin servidor, sin cuenta, sin nube.',
+      'lang.label': 'Idioma',
+      'hero.eyebrow': 'Red local · sin servidor · sin cuenta',
+      'hero.tagline': 'Dos dispositivos abren la app en la misma red, se encuentran solos e intercambian textos, mensajes de voz y archivos. Sin nube, sin registro, sin número de teléfono.',
+      'hero.note': 'descubrimiento por multicast UDP · 239.100.100.100:53320',
+      'hero.announce': 'anuncio',
+      'copy.label': 'copiar',
+      'copy.done': '¡copiado!',
+      'hero.winHint': 'Linux &amp; macOS. ¿En Windows? <a href="#install">mira más abajo</a>.',
+      'install.title': 'Instalar',
+      'install.lede': 'Un solo comando, o los pasos manuales si prefieres no ejecutar un script a ciegas.',
+      'card.oneCommand': 'Un solo comando',
+      'card.manual': 'Manualmente',
+      'card.homebrew': 'Con Homebrew',
+      'card.orOneCommand': 'O en un solo comando',
+      'card.powershell': 'Un solo comando (PowerShell)',
+      'linux.note': 'En Ubuntu/Debian instala un paquete <code>.deb</code> mediante <code>apt</code>. En otras distribuciones descarga un AppImage en <code>~/.local/bin</code>.',
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — descarga <code>peero.deb</code> desde la <a href="https://github.com/peero-app/peero/releases/latest">página de releases</a> y ejecuta: <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Otras distribuciones</strong> — descarga <code>peero.AppImage</code>, dale permisos de ejecución (<code>chmod +x peero.AppImage</code>) y ejecútalo directamente.',
+      'macos.note': 'La app no está firmada por Apple. La primera vez, si macOS se niega a abrirla: clic derecho en la app → <code>Abrir</code>, o ejecuta <code>xattr -cr /Applications/peero.app</code>.',
+      'windows.download': 'Descarga <code>peero-setup.exe</code> desde la <a href="https://github.com/peero-app/peero/releases/latest">página de releases</a>',
+      'windows.run': 'Haz doble clic y sigue el instalador',
+      'uninstall.title': 'Desinstalar',
+      'uninstall.lede': 'Nada oculto que rastrear: cada método de instalación tiene su propio comando de eliminación.',
+      'uninstall.appimage': 'Solo borra <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': 'Configuración → Aplicaciones, o ejecuta <code>unins000.exe</code> en la carpeta de instalación.',
+      'footer.source': '<a href="https://github.com/peero-app/peero">Código fuente en GitHub</a> — licencia MIT',
+      'footer.roadmap': '📱 iOS &amp; Android: previstos para una etapa posterior'
+    },
+    de: {
+      'meta.title': 'Peero — Nachrichten im lokalen Netzwerk',
+      'meta.description': 'Zwei Geräte im selben Netzwerk finden sich automatisch und tauschen Text, Sprachnachrichten und Dateien aus. Kein Server, kein Konto, keine Cloud.',
+      'lang.label': 'Sprache',
+      'hero.eyebrow': 'Lokales Netzwerk · kein Server · kein Konto',
+      'hero.tagline': 'Zwei Geräte öffnen die App im selben Netzwerk, finden sich von allein und tauschen Text, Sprachnachrichten und Dateien aus. Keine Cloud, keine Anmeldung, keine Telefonnummer.',
+      'hero.note': 'Erkennung per UDP-Multicast · 239.100.100.100:53320',
+      'hero.announce': 'Ankündigung',
+      'copy.label': 'kopieren',
+      'copy.done': 'kopiert!',
+      'hero.winHint': 'Linux &amp; macOS. Unter Windows? <a href="#install">siehe weiter unten</a>.',
+      'install.title': 'Installieren',
+      'install.lede': 'Ein Befehl, oder die manuellen Schritte, wenn du ein Skript nicht blind ausführen möchtest.',
+      'card.oneCommand': 'Ein Befehl',
+      'card.manual': 'Manuell',
+      'card.homebrew': 'Mit Homebrew',
+      'card.orOneCommand': 'Oder mit einem Befehl',
+      'card.powershell': 'Ein Befehl (PowerShell)',
+      'linux.note': 'Unter Ubuntu/Debian wird ein <code>.deb</code>-Paket über <code>apt</code> installiert. Auf anderen Distributionen wird ein AppImage nach <code>~/.local/bin</code> geladen.',
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — lade <code>peero.deb</code> von der <a href="https://github.com/peero-app/peero/releases/latest">Releases-Seite</a> und führe aus: <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Andere Distributionen</strong> — lade <code>peero.AppImage</code>, mache es ausführbar (<code>chmod +x peero.AppImage</code>) und starte es direkt.',
+      'macos.note': 'Die App ist nicht von Apple signiert. Wenn macOS sie beim ersten Start nicht öffnen will: Rechtsklick auf die App → <code>Öffnen</code>, oder <code>xattr -cr /Applications/peero.app</code> ausführen.',
+      'windows.download': 'Lade <code>peero-setup.exe</code> von der <a href="https://github.com/peero-app/peero/releases/latest">Releases-Seite</a>',
+      'windows.run': 'Doppelklicken und dem Installer folgen',
+      'uninstall.title': 'Deinstallieren',
+      'uninstall.lede': 'Nichts Verstecktes aufzuspüren — jede Installationsart hat ihren eigenen Entfernungsbefehl.',
+      'uninstall.appimage': 'Lösche einfach <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': 'Einstellungen → Apps, oder <code>unins000.exe</code> im Installationsordner ausführen.',
+      'footer.source': '<a href="https://github.com/peero-app/peero">Quellcode auf GitHub</a> — MIT-Lizenz',
+      'footer.roadmap': '📱 iOS &amp; Android: für einen späteren Schritt geplant'
+    },
+    it: {
+      'meta.title': 'Peero — messaggistica su rete locale',
+      'meta.description': 'Due dispositivi sulla stessa rete si trovano automaticamente e si scambiano testi, messaggi vocali e file. Nessun server, nessun account, nessun cloud.',
+      'lang.label': 'Lingua',
+      'hero.eyebrow': 'Rete locale · nessun server · nessun account',
+      'hero.tagline': "Due dispositivi aprono l'app sulla stessa rete, si trovano da soli e si scambiano testi, messaggi vocali e file. Niente cloud, niente registrazione, niente numero di telefono.",
+      'hero.note': 'rilevamento tramite multicast UDP · 239.100.100.100:53320',
+      'hero.announce': 'annuncio',
+      'copy.label': 'copia',
+      'copy.done': 'copiato!',
+      'hero.winHint': 'Linux &amp; macOS. Su Windows? <a href="#install">vedi più sotto</a>.',
+      'install.title': 'Installare',
+      'install.lede': 'Un solo comando, oppure i passaggi manuali se preferisci non eseguire uno script alla cieca.',
+      'card.oneCommand': 'Un solo comando',
+      'card.manual': 'Manualmente',
+      'card.homebrew': 'Con Homebrew',
+      'card.orOneCommand': 'Oppure con un comando',
+      'card.powershell': 'Un solo comando (PowerShell)',
+      'linux.note': 'Su Ubuntu/Debian installa un pacchetto <code>.deb</code> tramite <code>apt</code>. Sulle altre distribuzioni scarica un AppImage in <code>~/.local/bin</code>.',
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — scarica <code>peero.deb</code> dalla <a href="https://github.com/peero-app/peero/releases/latest">pagina delle release</a>, poi esegui: <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Altre distribuzioni</strong> — scarica <code>peero.AppImage</code>, rendilo eseguibile (<code>chmod +x peero.AppImage</code>) e avvialo direttamente.',
+      'macos.note': "L'app non è firmata da Apple. Al primo avvio, se macOS si rifiuta di aprirla: clic destro sull'app → <code>Apri</code>, oppure <code>xattr -cr /Applications/peero.app</code>.",
+      'windows.download': 'Scarica <code>peero-setup.exe</code> dalla <a href="https://github.com/peero-app/peero/releases/latest">pagina delle release</a>',
+      'windows.run': "Fai doppio clic e segui l'installer",
+      'uninstall.title': 'Disinstallare',
+      'uninstall.lede': 'Niente di nascosto da rintracciare: ogni metodo di installazione ha il suo comando di rimozione.',
+      'uninstall.appimage': 'Basta eliminare <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': 'Impostazioni → App, oppure esegui <code>unins000.exe</code> nella cartella di installazione.',
+      'footer.source': '<a href="https://github.com/peero-app/peero">Codice sorgente su GitHub</a> — licenza MIT',
+      'footer.roadmap': '📱 iOS &amp; Android: previsti per una fase successiva'
+    },
+    pt: {
+      'meta.title': 'Peero — mensagens na rede local',
+      'meta.description': 'Dois dispositivos na mesma rede encontram-se automaticamente e trocam textos, mensagens de voz e ficheiros. Sem servidor, sem conta, sem nuvem.',
+      'lang.label': 'Idioma',
+      'hero.eyebrow': 'Rede local · sem servidor · sem conta',
+      'hero.tagline': 'Dois dispositivos abrem a app na mesma rede, encontram-se sozinhos e trocam textos, mensagens de voz e ficheiros. Sem nuvem, sem registo, sem número de telefone.',
+      'hero.note': 'deteção por multicast UDP · 239.100.100.100:53320',
+      'hero.announce': 'anúncio',
+      'copy.label': 'copiar',
+      'copy.done': 'copiado!',
+      'hero.winHint': 'Linux &amp; macOS. No Windows? <a href="#install">veja mais abaixo</a>.',
+      'install.title': 'Instalar',
+      'install.lede': 'Um comando, ou os passos manuais se preferir não executar um script às cegas.',
+      'card.oneCommand': 'Um comando',
+      'card.manual': 'Manualmente',
+      'card.homebrew': 'Com Homebrew',
+      'card.orOneCommand': 'Ou num só comando',
+      'card.powershell': 'Um comando (PowerShell)',
+      'linux.note': 'No Ubuntu/Debian instala um pacote <code>.deb</code> através do <code>apt</code>. Noutras distribuições transfere um AppImage para <code>~/.local/bin</code>.',
+      'linux.debian': '<strong>Ubuntu / Debian</strong> — transfira <code>peero.deb</code> da <a href="https://github.com/peero-app/peero/releases/latest">página de releases</a> e execute: <code>sudo apt install ./peero.deb</code>',
+      'linux.other': '<strong>Outras distribuições</strong> — transfira <code>peero.AppImage</code>, torne-o executável (<code>chmod +x peero.AppImage</code>) e execute-o diretamente.',
+      'macos.note': 'A app não é assinada pela Apple. No primeiro arranque, se o macOS se recusar a abri-la: clique com o botão direito na app → <code>Abrir</code>, ou execute <code>xattr -cr /Applications/peero.app</code>.',
+      'windows.download': 'Transfira <code>peero-setup.exe</code> da <a href="https://github.com/peero-app/peero/releases/latest">página de releases</a>',
+      'windows.run': 'Faça duplo clique e siga o instalador',
+      'uninstall.title': 'Desinstalar',
+      'uninstall.lede': 'Nada escondido para procurar — cada método de instalação tem o seu próprio comando de remoção.',
+      'uninstall.appimage': 'Basta apagar <code>~/.local/bin/peero.AppImage</code>',
+      'uninstall.windows': 'Definições → Aplicações, ou execute <code>unins000.exe</code> na pasta de instalação.',
+      'footer.source': '<a href="https://github.com/peero-app/peero">Código-fonte no GitHub</a> — licença MIT',
+      'footer.roadmap': '📱 iOS &amp; Android: previstos para uma fase posterior'
+    }
+  };
+
+  var DEFAULT_LANG = 'en';
+  var STORAGE_KEY = 'peero-lang';
+  var select = document.getElementById('lang-select');
+
+  function stored() {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function remember(lang) {
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (e) {
+      return;
+    }
+  }
+
+  function detect() {
+    var saved = stored();
+    if (saved && TRANSLATIONS[saved]) return saved;
+    var candidates = navigator.languages || [navigator.language || ''];
+    for (var i = 0; i < candidates.length; i++) {
+      var code = String(candidates[i]).toLowerCase().split('-')[0];
+      if (TRANSLATIONS[code]) return code;
+    }
+    return DEFAULT_LANG;
+  }
+
+  function apply(lang) {
+    var dict = TRANSLATIONS[lang] || TRANSLATIONS[DEFAULT_LANG];
+    document.documentElement.lang = lang;
+    document.title = dict['meta.title'];
+    var description = document.querySelector('meta[name="description"]');
+    if (description) description.setAttribute('content', dict['meta.description']);
+
+    document.querySelectorAll('[data-i18n]').forEach(function (node) {
+      var value = dict[node.dataset.i18n];
+      if (value !== undefined) node.textContent = value;
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(function (node) {
+      var value = dict[node.dataset.i18nHtml];
+      if (value !== undefined) node.innerHTML = value;
+    });
+
+    select.setAttribute('aria-label', dict['lang.label']);
+    select.value = lang;
+  }
+
+  select.addEventListener('change', function () {
+    remember(select.value);
+    apply(select.value);
+  });
+
+  apply(detect());
+
+  document.querySelectorAll('[data-copy-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.dataset.copyTarget).textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        var dict = TRANSLATIONS[document.documentElement.lang] || TRANSLATIONS[DEFAULT_LANG];
+        btn.textContent = dict['copy.done'];
+        setTimeout(function () { btn.textContent = dict['copy.label']; }, 1500);
+      });
+    });
+  });
+</script>
+</body>
+</html>

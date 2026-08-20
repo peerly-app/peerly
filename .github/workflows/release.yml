@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+
+  build-linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libmpv-dev libepoxy-dev patchelf
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      - name: Package .deb
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUNDLE="build/linux/x64/release/bundle"
+          PKG="pkgroot"
+          rm -rf "$PKG"
+          mkdir -p "$PKG/opt/peero" "$PKG/usr/bin" "$PKG/usr/share/applications" "$PKG/usr/share/icons/hicolor/256x256/apps" "$PKG/DEBIAN"
+          cp -a "$BUNDLE"/. "$PKG/opt/peero/"
+          ln -s /opt/peero/peero "$PKG/usr/bin/peero"
+          cp packaging/linux/peero.desktop "$PKG/usr/share/applications/peero.desktop"
+          cp macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png "$PKG/usr/share/icons/hicolor/256x256/apps/peero.png"
+          sed "s/__VERSION__/${VERSION}/" packaging/linux/control.template > "$PKG/DEBIAN/control"
+          echo "--- ldd (informational, cross-check against Depends in control.template) ---"
+          ldd "$BUNDLE/peero" || true
+          dpkg-deb --build --root-owner-group "$PKG" peero.deb
+
+      - name: Package AppImage
+        run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          BUNDLE="build/linux/x64/release/bundle"
+          APPDIR="AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin"
+          # Copy the whole bundle (executable + lib/ + data/) verbatim: libapp.so and
+          # libflutter_linux_gtk.so are dlopen()'d at runtime, so linuxdeploy's linked-lib
+          # scanner never sees them and won't copy them on its own.
+          cp -a "$BUNDLE"/. "$APPDIR/usr/bin/"
+
+          # linuxdeploy matches the icon file's basename against the .desktop
+          # Icon= key, so it must be named exactly "peero.png".
+          cp macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png peero.png
+
+          curl -fsSL -o linuxdeploy -L "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -fsSL -o appimagetool -L "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x linuxdeploy appimagetool
+
+          # Voice-message playback (audioplayers/GStreamer): bundle the small,
+          # curated plugin set needed to decode this app's own AAC/.m4a output,
+          # isolated from whatever GStreamer happens to be on the host.
+          bash packaging/linux/bundle-gstreamer-audio.sh "$APPDIR"
+
+          # Voice-message recording (record_linux shells out to `parecord`
+          # by bare name via $PATH): bundle it too, same reasoning.
+          bash packaging/linux/bundle-pulseaudio-tools.sh "$APPDIR"
+
+          ./linuxdeploy --appdir "$APPDIR" \
+            -e "$APPDIR/usr/bin/peero" \
+            -d packaging/linux/peero.desktop \
+            -i peero.png \
+            --custom-apprun packaging/linux/AppRun
+
+          # linuxdeploy, scanning peero's link tree, follows media_kit_video's
+          # link to libmpv.so.2 all the way down into libmpv's own ~150-file
+          # ffmpeg/codec dependency closure and copies all of it. Video
+          # playback intentionally relies on the host's libmpv2 instead (see
+          # AppRun and control.template) rather than freezing that whole
+          # stack -- and its security updates -- into the AppImage, so prune
+          # it back down to what's actually needed by everything else.
+          echo "--- usr/lib before pruning libmpv's dependency closure ---"
+          du -sh "$APPDIR/usr/lib"
+          python3 packaging/linux/prune-video-codec-libs.py "$APPDIR/usr/lib" "$BUNDLE/lib"
+          echo "--- usr/lib after pruning ---"
+          du -sh "$APPDIR/usr/lib"
+
+          # linuxdeploy rewrites peero's RUNPATH from $ORIGIN/lib (Flutter's
+          # own convention -- plugin .so's live in usr/bin/lib/, next to the
+          # executable) to $ORIGIN/../lib (linuxdeploy's convention -- a
+          # sibling usr/lib/), which breaks loading every Flutter plugin.
+          # Restore the original lookup path in addition to linuxdeploy's.
+          patchelf --set-rpath '$ORIGIN/lib:$ORIGIN/../lib' "$APPDIR/usr/bin/peero"
+
+          ./appimagetool "$APPDIR" peero.AppImage
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" peero.deb peero.AppImage --clobber
+
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build macos --release
+
+      - name: Zip app bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent peero.app "$GITHUB_WORKSPACE/peero-macos.zip"
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" peero-macos.zip --clobber
+
+      - name: Update Homebrew Cask
+        # Pushes to the separate peero-app/homebrew-tap repo, so the default
+        # GITHUB_TOKEN (scoped to this repo only) can't be used here — needs
+        # a PAT with write access to that repo, set as this repo secret
+        # (HOMEBREW_TAP_TOKEN). Not currently set: this step is expected to
+        # fail (empty token) until one is added, so it's non-blocking — the
+        # cask gets updated by hand in the meantime.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(shasum -a 256 peero-macos.zip | awk '{print $1}')
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/peero-app/homebrew-tap.git" tap
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" tap/Casks/peero.rb
+          sed -i '' "s/sha256 .*/sha256 \"${SHA}\"/" tap/Casks/peero.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: update peero cask to ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
+
+  build-windows:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Compile installer
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y
+          }
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          & $iscc "/DMyAppVersion=$version" "packaging\windows\installer.iss"
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${env:GITHUB_REF_NAME}" packaging/windows/peero-setup.exe --clobber

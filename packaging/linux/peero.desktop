@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Peero
+Comment=Local network messaging: text, voice and files
+Comment[fr]=Messagerie sur réseau local : texte, voix et fichiers
+Comment[es]=Mensajería en red local: texto, voz y archivos
+Comment[de]=Nachrichten im lokalen Netzwerk: Text, Sprache und Dateien
+Comment[it]=Messaggistica su rete locale: testo, voce e file
+Comment[pt]=Mensagens na rede local: texto, voz e ficheiros
+Exec=peero
+Icon=peero
+Categories=Network;Chat;
+Terminal=false
+StartupWMClass=com.sikander.peero
+Version=1.0
